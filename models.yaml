@@ -6,7 +6,7 @@ comfyui_path: /workspace/runpod-slim/ComfyUI
 
 # Optional. Needed only for gated/private HuggingFace repos.
 # Can also be supplied via env var HF_TOKEN (env wins if config is empty).
-hf_token: ""
+hf_token: "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"
 
 # Re-download even if the file already exists. Same as CLI --force.
 overwrite: false
