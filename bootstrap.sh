@@ -16,7 +16,7 @@
 set -euo pipefail
 
 # --- defaults: EDIT THESE to point at your server / GitHub raw URL ----------
-BASE_URL="${BASE_URL:-https://raw.githubusercontent.com/USER/REPO/main}"
+BASE_URL="${BASE_URL:-https://raw.githubusercontent.com/dimitriy7877-gif/comfy_conf/main}"
 CONFIG="${CONFIG:-models.yaml}"
 SCRIPT="${SCRIPT:-fetch_models.py}"
 WORKDIR="${WORKDIR:-/workspace/.comfy-fetch}"
