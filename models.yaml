@@ -58,7 +58,7 @@ models:
 #    - Gist:          https://gist.githubusercontent.com/<user>/<id>/raw/<file>.json
 # ---------------------------------------------------------------------------
 workflows:
-  - url: https://huggingface.co/Comfy-Org/Wan_2.2_ComfyUI_Repackaged/resolve/main/example%20workflows_Wan2.2/wan2.2_t2v_A14B_example_workflow.json
-    filename: wan2.2_t2v_A14B.json
+  - url: https://raw.githubusercontent.com/dimitriy7877-gif/comfy_conf/main/wan22.json
+    filename: wan22.json
   # - url: https://raw.githubusercontent.com/<user>/<repo>/main/my_workflow.json
   #   subdir: wan        # optional nested folder under workflows/
