@@ -15,19 +15,26 @@ Features:
   - HuggingFace token support (gated repos) via config or HF_TOKEN env
   - Per-item rename + nested subfolder
   - Dry-run mode
+  - Workflow auto-discovery: pulls every *.json from the repo's workflows/
+    directory via the GitHub Contents API (top level only)
+  - Workflows are downloaded BEFORE models
 
 Usage:
   python3 fetch_models.py -c models.yaml
   python3 fetch_models.py -c models.yaml --dry-run
   python3 fetch_models.py -c models.yaml --force
   python3 fetch_models.py -c models.yaml --comfyui /path/to/ComfyUI
+  python3 fetch_models.py -c models.yaml --workflows-listing-url <api_url>
 """
 
 import argparse
+import json
 import os
 import shutil
 import subprocess
 import sys
+import urllib.error
+import urllib.request
 from pathlib import Path
 from urllib.parse import unquote, urlsplit
 
@@ -144,12 +151,94 @@ def fetch_list(items, base_dir: Path, headers, force, dry_run):
     return ok, fail
 
 
+def discover_workflows(listing_url, github_token):
+    """
+    Query the GitHub Contents API for a directory and return a list of
+    workflow items ({"url": <raw_url>, "filename": <name>}) for every
+    top-level *.json file. Non-fatal: returns [] on any problem.
+    """
+    if not listing_url:
+        return []
+
+    req = urllib.request.Request(listing_url)
+    req.add_header("Accept", "application/vnd.github+json")
+    req.add_header("User-Agent", "comfy-fetch-models")
+    if github_token:
+        req.add_header("Authorization", f"Bearer {github_token}")
+
+    try:
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            payload = json.loads(resp.read().decode("utf-8"))
+    except urllib.error.HTTPError as e:
+        if e.code == 404:
+            log("workflow auto-discovery: no 'workflows/' dir in repo "
+                "(404) - skipping", "=")
+        else:
+            log(f"workflow auto-discovery: HTTP {e.code} - skipping", "!")
+        return []
+    except Exception as e:
+        log(f"workflow auto-discovery failed ({e}) - skipping", "!")
+        return []
+
+    if not isinstance(payload, list):
+        log("workflow auto-discovery: unexpected API response - skipping", "!")
+        return []
+
+    found = []
+    for entry in payload:
+        if entry.get("type") != "file":
+            continue
+        name = entry.get("name", "")
+        if not name.lower().endswith(".json"):
+            continue
+        raw = entry.get("download_url")
+        if not raw:
+            continue
+        found.append({"url": raw, "filename": name})
+
+    found.sort(key=lambda i: i["filename"].lower())
+    log(f"workflow auto-discovery: found {len(found)} json file(s)", "#")
+    return found
+
+
+def merge_workflows(discovered, explicit):
+    """
+    Combine auto-discovered workflows with the explicit list from models.yaml.
+    Explicit entries win on filename collisions (they may carry custom
+    filename/subdir). Discovered files are appended only if their target
+    filename is not already claimed by an explicit entry.
+    """
+    def norm(item):
+        if isinstance(item, str):
+            item = {"url": item}
+        name = item.get("filename") or filename_from_url(item["url"])
+        return item, name
+
+    explicit_norm = [norm(i) for i in (explicit or [])]
+    claimed = {name for _, name in explicit_norm}
+
+    merged = [item for item, _ in explicit_norm]
+    for item, name in (norm(i) for i in discovered):
+        if name in claimed:
+            log(f"workflow '{name}' overridden by models.yaml entry", "=")
+            continue
+        merged.append(item)
+        claimed.add(name)
+    return merged
+
+
 def main():
     ap = argparse.ArgumentParser(description="ComfyUI universal model downloader")
     ap.add_argument("-c", "--config", required=True, help="YAML config path")
     ap.add_argument("--comfyui", help="Override comfyui_path from config")
     ap.add_argument("--force", action="store_true", help="Re-download even if present")
     ap.add_argument("--dry-run", action="store_true", help="Show actions, download nothing")
+    ap.add_argument("--workflows-listing-url",
+                    help="GitHub Contents API URL of the repo's workflows/ dir "
+                         "(auto-supplied by bootstrap.sh)")
+    ap.add_argument("--github-token",
+                    help="GitHub token for the Contents API (private repos / "
+                         "higher rate limit)")
     args = ap.parse_args()
 
     cfg = yaml.safe_load(Path(args.config).read_text())
@@ -160,6 +249,7 @@ def main():
     models_root = comfyui / "models"
 
     token = cfg.get("hf_token") or os.environ.get("HF_TOKEN") or ""
+    github_token = args.github_token or os.environ.get("GITHUB_TOKEN") or ""
     force = args.force or bool(cfg.get("overwrite"))
     headers = build_headers(token)
 
@@ -171,25 +261,36 @@ def main():
     log(f"models root:  {models_root}")
     log(f"workflows:    {wf_dir}")
     log(f"HF token:     {'yes' if token else 'no'}")
+    log(f"GitHub token: {'yes' if github_token else 'no'}")
     log(f"force:        {force} | dry-run: {args.dry_run}")
     print("-" * 60)
 
     models = cfg.get("models") or {}
-    workflows = cfg.get("workflows") or []
+    explicit_workflows = cfg.get("workflows") or []
+
+    discovered = discover_workflows(args.workflows_listing_url, github_token)
+    workflows = merge_workflows(discovered, explicit_workflows)
+
     if not models and not workflows:
-        sys.exit("Nothing to do: config has neither 'models' nor 'workflows'.")
+        sys.exit("Nothing to do: config has neither 'models' nor 'workflows', "
+                 "and no workflows were auto-discovered.")
 
     ok = fail = 0
+
+    # --- workflows FIRST, before models ------------------------------------
+    if workflows:
+        log(f"=== workflows ({len(workflows)})  ->  {wf_dir}", "#")
+        o, f = fetch_list(workflows, wf_dir, headers, force, args.dry_run)
+        ok += o
+        fail += f
+    else:
+        log("no workflows to download", "=")
+
+    # --- models ------------------------------------------------------------
     for mtype, items in models.items():
         type_dir = models_root / mtype
         log(f"=== model type: {mtype}  ->  {type_dir}", "#")
         o, f = fetch_list(items, type_dir, headers, force, args.dry_run)
-        ok += o
-        fail += f
-
-    if workflows:
-        log(f"=== workflows  ->  {wf_dir}", "#")
-        o, f = fetch_list(workflows, wf_dir, headers, force, args.dry_run)
         ok += o
         fail += f
 

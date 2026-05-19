@@ -6,27 +6,80 @@
 #  BASE_URL, then runs it. Any extra args are passed through to fetch_models.py
 #  (e.g. --dry-run, --force, --comfyui /path).
 #
-#  Run (defaults baked in below):
-#     curl -fsSL <BASE_URL>/bootstrap.sh | bash
+#  BASE_URL resolution order:
+#    1. explicit  BASE_URL=...           (env, highest priority)
+#    2. derived from BOOTSTRAP_URL       (dirname of the bootstrap.sh URL)
+#    3. hardcoded default below          (plain `curl ... | bash`)
 #
-#  Override base location / config name / pass args:
-#     curl -fsSL <BASE_URL>/bootstrap.sh \
-#       | BASE_URL=https://my.server/comfy CONFIG=models.yaml bash -s -- --dry-run
+#  Recommended one-liner (URL typed once, reused for BASE_URL derivation):
+#     U="https://raw.githubusercontent.com/USER/REPO/main/SUBDIR/bootstrap.sh"
+#     curl -fsSL "$U" | BOOTSTRAP_URL="$U" bash
+#
+#  With args:
+#     U="https://.../SUBDIR/bootstrap.sh"
+#     curl -fsSL "$U" | BOOTSTRAP_URL="$U" bash -s -- --dry-run
+#
+#  Override base location without editing the file:
+#     curl -fsSL "$U" | BASE_URL=https://my.server/comfy bash -s -- --dry-run
 # ===========================================================================
 set -euo pipefail
 
-# --- defaults: EDIT THESE to point at your server / GitHub raw URL ----------
-BASE_URL="${BASE_URL:-https://raw.githubusercontent.com/dimitriy7877-gif/comfy_conf/main}"
+# --- defaults --------------------------------------------------------------
+DEFAULT_BASE_URL="https://raw.githubusercontent.com/dimitriy7877-gif/comfy_conf/main"
 CONFIG="${CONFIG:-models.yaml}"
 SCRIPT="${SCRIPT:-fetch_models.py}"
 WORKDIR="${WORKDIR:-/workspace/.comfy-fetch}"
+BOOTSTRAP_URL="${BOOTSTRAP_URL:-}"
+GITHUB_TOKEN="${GITHUB_TOKEN:-}"
 # ---------------------------------------------------------------------------
 
 log() { echo "[bootstrap] $*"; }
 
+# --- 0. resolve BASE_URL ---------------------------------------------------
+# Priority: explicit BASE_URL env > dirname(BOOTSTRAP_URL) > hardcoded default.
+if [ -n "${BASE_URL:-}" ]; then
+  log "BASE_URL from env (explicit)"
+elif [ -n "$BOOTSTRAP_URL" ]; then
+  BASE_URL="${BOOTSTRAP_URL%/*}"          # strip trailing /bootstrap.sh
+  log "BASE_URL derived from BOOTSTRAP_URL"
+else
+  BASE_URL="$DEFAULT_BASE_URL"
+  log "BASE_URL from hardcoded default"
+fi
+BASE_URL="${BASE_URL%/}"                    # normalize: no trailing slash
+
 log "BASE_URL = $BASE_URL"
 log "config   = $CONFIG | script = $SCRIPT"
 log "workdir  = $WORKDIR"
+
+# --- 0b. derive GitHub Contents API URL for the repo's workflows/ dir ------
+# Only possible when BASE_URL points at raw.githubusercontent.com. We bind to
+# the *directory* that bootstrap.sh lives in (BASE_URL), not the repo root, so
+# a "workflows/" folder sitting next to bootstrap.sh is auto-discovered.
+WORKFLOWS_LISTING_URL=""
+case "$BASE_URL" in
+  https://raw.githubusercontent.com/*)
+    rest="${BASE_URL#https://raw.githubusercontent.com/}"
+    owner="$(printf '%s' "$rest" | cut -d/ -f1)"
+    repo="$(printf '%s'  "$rest" | cut -d/ -f2)"
+    branch="$(printf '%s' "$rest" | cut -d/ -f3)"
+    # everything after owner/repo/branch == directory path inside the repo
+    dirpath="$(printf '%s' "$rest" | cut -d/ -f4-)"
+    dirpath="${dirpath#/}"; dirpath="${dirpath%/}"
+    if [ -n "$owner" ] && [ -n "$repo" ] && [ -n "$branch" ]; then
+      if [ -n "$dirpath" ]; then
+        wf_path="$dirpath/workflows"
+      else
+        wf_path="workflows"
+      fi
+      WORKFLOWS_LISTING_URL="https://api.github.com/repos/$owner/$repo/contents/$wf_path?ref=$branch"
+      log "workflows dir API = $WORKFLOWS_LISTING_URL"
+    fi
+    ;;
+  *)
+    log "BASE_URL is not a github raw URL -> workflow auto-discovery disabled"
+    ;;
+esac
 
 # --- 1. dependencies -------------------------------------------------------
 need_apt=()
@@ -57,5 +110,13 @@ log "downloading $CONFIG"
 curl -fsSL "$BASE_URL/$CONFIG" -o "$CONFIG"
 
 # --- 3. run (pass through any extra args) ----------------------------------
+extra=()
+if [ -n "$WORKFLOWS_LISTING_URL" ]; then
+  extra+=(--workflows-listing-url "$WORKFLOWS_LISTING_URL")
+fi
+if [ -n "$GITHUB_TOKEN" ]; then
+  extra+=(--github-token "$GITHUB_TOKEN")
+fi
+
 log "running downloader..."
-exec python3 "$SCRIPT" -c "$CONFIG" "$@"
+exec python3 "$SCRIPT" -c "$CONFIG" "${extra[@]}" "$@"
