@@ -1,0 +1,66 @@
+# ===========================================================================
+#  ComfyUI model download config
+# ===========================================================================
+# Where ComfyUI lives. Files go into <comfyui_path>/models/<type>/...
+comfyui_path: /workspace/runpod-slim/ComfyUI
+
+# Optional. Needed only for gated/private HuggingFace repos.
+# Can also be supplied via env var HF_TOKEN (env wins if config is empty).
+hf_token: ""
+
+# Re-download even if the file already exists. Same as CLI --force.
+overwrite: false
+
+# Where to put workflow JSONs. Default (if omitted):
+#   <comfyui_path>/user/default/workflows
+# workflows_path: /workspace/runpod-slim/ComfyUI/user/default/workflows
+
+# ---------------------------------------------------------------------------
+#  models:
+#    <type>:                # == folder name under models/  (any name allowed)
+#      - <url>                            # shorthand: just a URL string
+#      - url: <url>                       # full form
+#        filename: rename.safetensors     # optional: save under another name
+#        subdir: SomeFolder               # optional: nested subfolder
+# ---------------------------------------------------------------------------
+models:
+
+  diffusion_models:
+    # Wan 2.2 T2V A14B GGUF — high/low noise experts.
+    # Keeping them in subfolders so names stay tidy; drop "subdir" to flatten.
+    - url: https://huggingface.co/QuantStack/Wan2.2-T2V-A14B-GGUF/resolve/main/HighNoise/Wan2.2-T2V-A14B-HighNoise-Q8_0.gguf
+      subdir: Wan2.2-T2V-A14B
+    - url: https://huggingface.co/QuantStack/Wan2.2-T2V-A14B-GGUF/resolve/main/LowNoise/Wan2.2-T2V-A14B-LowNoise-Q8_0.gguf
+      subdir: Wan2.2-T2V-A14B
+
+  vae:
+    - https://huggingface.co/QuantStack/Wan2.2-T2V-A14B-GGUF/resolve/main/VAE/Wan2.1_VAE.safetensors
+
+  text_encoders:
+    - https://huggingface.co/Comfy-Org/Wan_2.2_ComfyUI_Repackaged/resolve/main/split_files/text_encoders/umt5_xxl_fp8_e4m3fn_scaled.safetensors
+
+  loras:
+    - url: https://huggingface.co/lightx2v/Wan2.2-Distill-Loras/resolve/main/wan2.2_t2v_A14b_high_noise_lora_rank64_lightx2v_4step_1217.safetensors
+      subdir: Wan2.2-T2V-A14B
+    - url: https://huggingface.co/lightx2v/Wan2.2-Distill-Loras/resolve/main/wan2.2_t2v_A14b_low_noise_lora_rank64_lightx2v_4step_1217.safetensors
+      subdir: Wan2.2-T2V-A14B
+
+  # Add more types freely, e.g.:
+  # checkpoints:
+  #   - url: https://.../model.safetensors
+  #     filename: my_checkpoint.safetensors
+  # loras:
+  #   - https://.../some_lora.safetensors
+
+# ---------------------------------------------------------------------------
+#  workflows: flat list, same item syntax as models (url string OR
+#  url/filename/subdir). Downloaded into workflows_path. Use raw links:
+#    - GitHub:        https://raw.githubusercontent.com/<user>/<repo>/<branch>/<path>.json
+#    - HuggingFace:   https://huggingface.co/<repo>/resolve/main/<path>.json
+#    - Gist:          https://gist.githubusercontent.com/<user>/<id>/raw/<file>.json
+# ---------------------------------------------------------------------------
+workflows:
+  - url: https://huggingface.co/Comfy-Org/Wan_2.2_ComfyUI_Repackaged/resolve/main/example%20workflows_Wan2.2/wan2.2_t2v_A14B_example_workflow.json
+    filename: wan2.2_t2v_A14B.json
+  # - url: https://raw.githubusercontent.com/<user>/<repo>/main/my_workflow.json
+  #   subdir: wan        # optional nested folder under workflows/
