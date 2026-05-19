@@ -1,15 +1,26 @@
-"# comfy_conf" 
+# comfy_conf
 
-curl -fsSL https://raw.githubusercontent.com/USER/REPO/main/bootstrap.sh | bash
+**Стандартный запуск**
+```bash
+curl -fsSL [https://raw.githubusercontent.com/dimitriy7877-gif/comfy_conf/main/bootstrap.sh](https://raw.githubusercontent.com/dimitriy7877-gif/comfy_conf/main/bootstrap.sh) | bash
+```
 
-# проверка без скачивания
-curl -fsSL https://raw.githubusercontent.com/USER/REPO/main/bootstrap.sh | bash -s -- --dry-run
+**Проверка без скачивания (dry-run)**
+```bash
+curl -fsSL [https://raw.githubusercontent.com/dimitriy7877-gif/comfy_conf/main/bootstrap.sh](https://raw.githubusercontent.com/dimitriy7877-gif/comfy_conf/main/bootstrap.sh) | bash -s -- --dry-run
+```
 
-# перебить путь к ComfyUI / перекачать всё заново
-curl -fsSL .../bootstrap.sh | bash -s -- --comfyui /workspace/runpod-slim/ComfyUI --force
+**Перебить путь к ComfyUI / перекачать всё заново**
+```bash
+curl -fsSL [https://raw.githubusercontent.com/dimitriy7877-gif/comfy_conf/main/bootstrap.sh](https://raw.githubusercontent.com/dimitriy7877-gif/comfy_conf/main/bootstrap.sh) | bash -s -- --comfyui /workspace/runpod-slim/ComfyUI --force
+```
 
-# взять скрипты с другого источника, не меняя файл
-curl -fsSL .../bootstrap.sh | BASE_URL=https://my.server/comfy bash -s -- --dry-run
+**Взять скрипты с другого источника, не меняя файл**
+```bash
+curl -fsSL [https://raw.githubusercontent.com/dimitriy7877-gif/comfy_conf/main/bootstrap.sh](https://raw.githubusercontent.com/dimitriy7877-gif/comfy_conf/main/bootstrap.sh) | BASE_URL=[https://my.server/comfy](https://my.server/comfy) bash -s -- --dry-run
+```
 
-# приватный HF-репозиторий
-curl -fsSL .../bootstrap.sh | HF_TOKEN=hf_xxx bash
+**Приватный HF-репозиторий**
+```bash
+curl -fsSL [https://raw.githubusercontent.com/dimitriy7877-gif/comfy_conf/main/bootstrap.sh](https://raw.githubusercontent.com/dimitriy7877-gif/comfy_conf/main/bootstrap.sh) | HF_TOKEN=hf_xxx bash
+```
