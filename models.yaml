@@ -29,9 +29,7 @@ models:
     # Wan 2.2 T2V A14B GGUF — high/low noise experts.
     # Keeping them in subfolders so names stay tidy; drop "subdir" to flatten.
     - url: https://huggingface.co/QuantStack/Wan2.2-T2V-A14B-GGUF/resolve/main/HighNoise/Wan2.2-T2V-A14B-HighNoise-Q8_0.gguf
-      subdir: Wan2.2-T2V-A14B
     - url: https://huggingface.co/QuantStack/Wan2.2-T2V-A14B-GGUF/resolve/main/LowNoise/Wan2.2-T2V-A14B-LowNoise-Q8_0.gguf
-      subdir: Wan2.2-T2V-A14B
 
   vae:
     - https://huggingface.co/QuantStack/Wan2.2-T2V-A14B-GGUF/resolve/main/VAE/Wan2.1_VAE.safetensors
@@ -41,9 +39,9 @@ models:
 
   loras:
     - url: https://huggingface.co/lightx2v/Wan2.2-Distill-Loras/resolve/main/wan2.2_t2v_A14b_high_noise_lora_rank64_lightx2v_4step_1217.safetensors
-      subdir: Wan2.2-T2V-A14B
     - url: https://huggingface.co/lightx2v/Wan2.2-Distill-Loras/resolve/main/wan2.2_t2v_A14b_low_noise_lora_rank64_lightx2v_4step_1217.safetensors
-      subdir: Wan2.2-T2V-A14B
+    - url: https://huggingface.co/Instara/instareal-wan-2.2/resolve/main/Instareal_high.safetensors
+    - url: https://huggingface.co/Instara/instareal-wan-2.2/resolve/main/Instareal_low.safetensors
 
   # Add more types freely, e.g.:
   # checkpoints:
