@@ -159,6 +159,7 @@ models:
     # Instara realism LoRA (gated repo — needs hf_token / HF_TOKEN), high + low
     - url: https://huggingface.co/Instara/instareal-wan-2.2/resolve/main/Instareal_high.safetensors
     - url: https://huggingface.co/Instara/instareal-wan-2.2/resolve/main/Instareal_low.safetensors
+    - url: https://huggingface.co/Akron22/LenovoUltraRealWan/resolve/main/Lenovo.safetensors
 
   # ---- More types as needed (folder == key name) ----
   # checkpoints:
