@@ -115,6 +115,7 @@ custom_nodes:
   # Required by this config's payload:
   - ComfyUI-GGUF
   - RES4LYF
+  - efficiency-nodes-comfyui
 
   # Optional helpers:
   - ComfyUI-Crystools
