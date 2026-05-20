@@ -17,8 +17,10 @@ Features:
   - Dry-run mode
   - Workflow auto-discovery: pulls every *.json from the repo's workflows/
     directory via the GitHub Contents API (top level only)
-  - Custom node installation via comfy-cli (fallback: cm-cli.py),
-    list declared in models.yaml, ComfyUI restarted afterwards
+  - Custom node installation via comfy-cli. Accepts BOTH git URLs and
+    ComfyUI Registry IDs in the same list. Lazily installs the
+    `comfyui-manager` pip package (modern comfy-cli >=1.5 looks for it
+    via Python import, not as a git checkout in custom_nodes/).
   - Order: workflows -> custom nodes -> models -> single restart
 
 Usage:
@@ -234,37 +236,49 @@ def merge_workflows(discovered, explicit):
 # ===========================================================================
 #  Custom nodes
 # ===========================================================================
+#
+#  Modern comfy-cli (>=1.5) finds ComfyUI-Manager by importing the pip
+#  package `comfyui_manager`, NOT by looking at the git checkout in
+#  custom_nodes/. The historical "git clone Manager into custom_nodes" trick
+#  is silently ignored - "ComfyUI-Manager not found. 'cm-cli' command is not
+#  available." is exactly the symptom.
+#
+#  So we install the Manager as a pip package into the Python interpreter
+#  that comfy-cli will end up invoking ('/usr/bin/python3.12 -m cm_cli ...'
+#  in our case - that's the one that runs ComfyUI on the pod).
+#
+#  After that, `comfy node install <ref>` works for both git URLs and
+#  Registry IDs in a single uniform call.
+# ===========================================================================
 
-def normalize_node(item):
+def normalize_node_ref(item):
     """
-    Accept a node spec in any of these shapes and return a normalized dict:
-      "comfyui-kjnodes"                 -> registry id
-      "https://github.com/u/Repo"       -> git url
-      {url: <git>, pip: <bool>}         -> git url
-      {id: <reg-id>, version: <v>, pip} -> registry id (optional pin)
-    Returned: {"kind": "git"|"registry", "ref": str, "pip": bool}
+    Turn any node spec into (ref_str, pip_deps_bool).
+      "comfyui-gguf"                              -> ("comfyui-gguf", True)
+      "https://github.com/u/Repo"                 -> ("https://...", True)
+      {url: <git>, pip: false}                    -> ("<git>",       False)
+      {id: comfyui-impact-pack, version: 8.15.3}  -> ("comfyui-impact-pack@8.15.3", True)
+
+    comfy-cli accepts URLs and Registry IDs in the same `node install`
+    argument list - no need to distinguish them on our side.
     """
     if isinstance(item, str):
-        if item.startswith(("http://", "https://", "git@")):
-            item = {"url": item}
-        else:
-            item = {"id": item}
+        return item, True
 
+    pip = item.get("pip", True)
     if item.get("url"):
-        return {"kind": "git", "ref": item["url"],
-                "pip": item.get("pip", True)}
+        return item["url"], pip
 
     ref = str(item["id"])
     if item.get("version"):
-        ref = f'{ref}=={item["version"]}'
-    return {"kind": "registry", "ref": ref, "pip": item.get("pip", True)}
+        ref = f'{ref}@{item["version"]}'
+    return ref, pip
 
 
 def node_env(cfg):
     """
-    Custom-node pip requirements MUST land in the same Python that ComfyUI
-    runs under, otherwise the nodes won't import. If comfyui_venv is set we
-    point the installer at it via VIRTUAL_ENV / PATH.
+    Env for sub-tools. Prepend the venv's bin/ if comfyui_venv is set, so
+    any sub-tool that lives there (e.g. uv) is found.
     """
     env = os.environ.copy()
     venv = cfg.get("comfyui_venv")
@@ -272,75 +286,117 @@ def node_env(cfg):
         venv = str(Path(venv).expanduser())
         env["VIRTUAL_ENV"] = venv
         env["PATH"] = f"{venv}/bin:" + env.get("PATH", "")
-        log(f"node deps -> venv: {venv}", "*")
     return env
 
 
-def ensure_manager(comfyui: Path, cfg, dry_run):
+def node_python(cfg):
     """
-    comfy-cli delegates to ComfyUI-Manager's cm-cli.py and requires it to be
-    present. On a slim pod it may be missing -> clone it. Non-fatal.
+    Pick the Python interpreter that ComfyUI runs under. The Manager pip
+    package and every node's requirements.txt must land in this exact
+    interpreter, or comfy-cli won't find Manager (and nodes won't import).
+
+    Priority:
+      1. comfyui_venv/bin/python (if the config sets it and it exists)
+      2. sys.executable (the python running this script - same one
+         bootstrap.sh used; on the runpod-slim pod that's /usr/bin/python3.12,
+         which is also what comfy-cli ends up invoking).
     """
-    mgr = comfyui / "custom_nodes" / "ComfyUI-Manager"
-    if mgr.exists():
-        return True
-    repo = cfg.get("comfyui_manager_repo",
-                    "https://github.com/ltdrdata/ComfyUI-Manager.git")
+    venv = cfg.get("comfyui_venv")
+    if venv:
+        py = Path(venv).expanduser() / "bin" / "python"
+        if py.exists():
+            log(f"node python: {py} (from comfyui_venv)", "*")
+            return str(py)
+        log(f"WARNING: comfyui_venv={venv} but {py} not found; "
+            f"falling back to {sys.executable}", "!")
+    return sys.executable
+
+
+def pip_install(py_exe, env, args, dry_run):
+    """
+    Run `<py> -m pip install <args>` with --break-system-packages for
+    PEP 668 environments (Ubuntu 24+ / Debian 12+). Falls back to a plain
+    install if --break-system-packages isn't supported by the pip version.
+    """
     if dry_run:
-        log(f"DRY-RUN would clone ComfyUI-Manager from {repo}", ">")
+        log(f"DRY-RUN would: {py_exe} -m pip install {' '.join(args)}", ">")
         return True
-    log(f"ComfyUI-Manager not found, cloning: {repo}", ">")
-    rc = subprocess.run(
-        ["git", "clone", "--depth", "1", repo, str(mgr)]
-    ).returncode
-    if rc != 0:
-        log(f"FAILED to clone ComfyUI-Manager (rc={rc})", "!")
+
+    base = [py_exe, "-m", "pip", "install"]
+    rc = subprocess.run(base + ["--break-system-packages"] + args,
+                        env=env).returncode
+    if rc == 0:
+        return True
+    # Older pip versions don't know --break-system-packages.
+    log("pip install --break-system-packages failed; retrying without", "!")
+    rc = subprocess.run(base + args, env=env).returncode
+    return rc == 0
+
+
+def ensure_manager(cfg, dry_run):
+    """
+    Make sure `import comfyui_manager` works in the target Python. If not,
+    `pip install comfyui-manager` into it. Returns True on success.
+    """
+    py = node_python(cfg)
+    env = node_env(cfg)
+
+    check = subprocess.run(
+        [py, "-c", "import comfyui_manager"],
+        env=env, capture_output=True
+    )
+    if check.returncode == 0:
+        log("ComfyUI-Manager pip package: already installed", "=")
+        return True
+
+    log(f"ComfyUI-Manager pip package missing; installing into {py}", ">")
+    if not pip_install(py, env, ["comfyui-manager"], dry_run):
+        log("FAILED to install comfyui-manager", "!")
         return False
+    log("ComfyUI-Manager installed", "+")
     return True
 
 
 def install_custom_nodes(nodes, comfyui: Path, cfg, dry_run, force):
     """
-    Install custom nodes. Returns (ok, fail, changed) where `changed` is the
-    number of nodes for which an install command actually ran (used to decide
-    whether a ComfyUI restart is warranted).
+    Install all custom nodes via `comfy node install`. Returns
+    (ok, fail, changed). `changed` counts successful installs that should
+    trigger a restart - currently every successful invocation counts, since
+    comfy-cli doesn't expose an "already installed, no-op" signal in its
+    exit code.
     """
     ok = fail = changed = 0
-    installer = cfg.get("custom_nodes_installer", "comfy-cli")
+    if not nodes:
+        return 0, 0, 0
+
+    if not shutil.which("comfy"):
+        log("comfy-cli ('comfy') not on PATH; cannot install custom nodes "
+            "(install with: pip install comfy-cli)", "!")
+        return 0, len(nodes), 0
+
+    if not ensure_manager(cfg, dry_run):
+        log("ComfyUI-Manager unavailable; skipping custom-node installation",
+            "!")
+        return 0, len(nodes), 0
+
     env = node_env(cfg)
 
-    if installer == "comfy-cli":
-        if not shutil.which("comfy"):
-            log("comfy-cli ('comfy') not on PATH -> falling back to cm-cli", "!")
-            installer = "cm-cli"
-        else:
-            ensure_manager(comfyui, cfg, dry_run)
-
-    cm_cli = comfyui / "custom_nodes" / "ComfyUI-Manager" / "cm-cli.py"
-    if installer == "cm-cli" and not dry_run and not cm_cli.exists():
-        # cm-cli fallback still needs ComfyUI-Manager present
-        if not ensure_manager(comfyui, cfg, dry_run) or not cm_cli.exists():
-            log("cm-cli.py unavailable - cannot install custom nodes", "!")
-            return ok, len(nodes or []), 0
-
-    for spec in (normalize_node(x) for x in nodes or []):
-        ref, kind = spec["ref"], spec["kind"]
+    for item in nodes:
+        ref, pip_deps = normalize_node_ref(item)
 
         if dry_run:
-            log(f"DRY-RUN would install [{installer}/{kind}] {ref}", ">")
+            log(f"DRY-RUN would install: {ref}"
+                f"{' (no deps)' if not pip_deps else ''}", ">")
             ok += 1
             continue
 
-        if installer == "comfy-cli":
-            cmd = ["comfy", "--skip-prompt", "--workspace", str(comfyui),
-                   "node"]
-            cmd += (["registry-install", ref] if kind == "registry"
-                    else ["install", ref])
-        else:  # cm-cli
-            env["COMFYUI_PATH"] = str(comfyui)
-            cmd = [sys.executable, str(cm_cli), "install", ref]
+        cmd = ["comfy", "--skip-prompt", "--workspace", str(comfyui),
+               "node", "install"]
+        if not pip_deps:
+            cmd.append("--no-deps")
+        cmd.append(ref)
 
-        log(f"installing custom node [{kind}]: {ref}", ">")
+        log(f"installing node: {ref}", ">")
         rc = subprocess.run(cmd, env=env).returncode
         if rc == 0:
             log(f"DONE node: {ref}", "+")
@@ -360,7 +416,8 @@ def restart_comfyui(cfg, dry_run, changed, no_restart):
       auto (default)     -> ComfyUI-Manager reboot endpoint, then fall back
                             to killing main.py (pod supervisor relaunches)
       "<command>"        -> run the given shell command
-    Only fires if at least one node actually installed and not dry-run.
+    Only fires if at least one node was successfully installed and not in
+    dry-run mode.
     """
     strat = cfg.get("restart", "auto")
 
@@ -390,7 +447,6 @@ def restart_comfyui(cfg, dry_run, changed, no_restart):
                     return
                 except Exception:
                     continue
-        # Fallback: kill the server; RunPod templates typically relaunch it.
         rc = subprocess.run(["pkill", "-f", "ComfyUI/main.py"]).returncode
         if rc == 0:
             log("restart: killed main.py (pod supervisor should relaunch)",

@@ -14,13 +14,6 @@
 #  Recommended one-liner (URL typed once, reused for BASE_URL derivation):
 #     U="https://raw.githubusercontent.com/USER/REPO/main/SUBDIR/bootstrap.sh"
 #     curl -fsSL "$U" | BOOTSTRAP_URL="$U" bash
-#
-#  With args:
-#     U="https://.../SUBDIR/bootstrap.sh"
-#     curl -fsSL "$U" | BOOTSTRAP_URL="$U" bash -s -- --dry-run
-#
-#  Override base location without editing the file:
-#     curl -fsSL "$U" | BASE_URL=https://my.server/comfy bash -s -- --dry-run
 # ===========================================================================
 set -euo pipefail
 
@@ -36,26 +29,22 @@ GITHUB_TOKEN="${GITHUB_TOKEN:-}"
 log() { echo "[bootstrap] $*"; }
 
 # --- 0. resolve BASE_URL ---------------------------------------------------
-# Priority: explicit BASE_URL env > dirname(BOOTSTRAP_URL) > hardcoded default.
 if [ -n "${BASE_URL:-}" ]; then
   log "BASE_URL from env (explicit)"
 elif [ -n "$BOOTSTRAP_URL" ]; then
-  BASE_URL="${BOOTSTRAP_URL%/*}"          # strip trailing /bootstrap.sh
+  BASE_URL="${BOOTSTRAP_URL%/*}"
   log "BASE_URL derived from BOOTSTRAP_URL"
 else
   BASE_URL="$DEFAULT_BASE_URL"
   log "BASE_URL from hardcoded default"
 fi
-BASE_URL="${BASE_URL%/}"                    # normalize: no trailing slash
+BASE_URL="${BASE_URL%/}"
 
 log "BASE_URL = $BASE_URL"
 log "config   = $CONFIG | script = $SCRIPT"
 log "workdir  = $WORKDIR"
 
 # --- 0b. derive GitHub Contents API URL for the repo's workflows/ dir ------
-# Only possible when BASE_URL points at raw.githubusercontent.com. We bind to
-# the *directory* that bootstrap.sh lives in (BASE_URL), not the repo root, so
-# a "workflows/" folder sitting next to bootstrap.sh is auto-discovered.
 WORKFLOWS_LISTING_URL=""
 case "$BASE_URL" in
   https://raw.githubusercontent.com/*)
@@ -63,7 +52,6 @@ case "$BASE_URL" in
     owner="$(printf '%s' "$rest" | cut -d/ -f1)"
     repo="$(printf '%s'  "$rest" | cut -d/ -f2)"
     branch="$(printf '%s' "$rest" | cut -d/ -f3)"
-    # everything after owner/repo/branch == directory path inside the repo
     dirpath="$(printf '%s' "$rest" | cut -d/ -f4-)"
     dirpath="${dirpath#/}"; dirpath="${dirpath%/}"
     if [ -n "$owner" ] && [ -n "$repo" ] && [ -n "$branch" ]; then
@@ -86,7 +74,7 @@ need_apt=()
 command -v python3 >/dev/null 2>&1 || need_apt+=(python3)
 command -v pip3   >/dev/null 2>&1 || need_apt+=(python3-pip)
 command -v curl   >/dev/null 2>&1 || need_apt+=(curl)
-command -v git    >/dev/null 2>&1 || need_apt+=(git)      # node clones / Manager
+command -v git    >/dev/null 2>&1 || need_apt+=(git)      # for node clones
 command -v aria2c >/dev/null 2>&1 || need_apt+=(aria2)    # fast parallel DL
 
 if [ "${#need_apt[@]}" -gt 0 ]; then
@@ -100,12 +88,13 @@ log "installing pyyaml"
 pip3 install -q --upgrade pyyaml --break-system-packages 2>/dev/null \
   || pip3 install -q --upgrade pyyaml
 
-# comfy-cli is used for custom-node installation (it wraps ComfyUI-Manager's
-# cm-cli.py). Harmless if no custom_nodes are declared in models.yaml.
+# comfy-cli drives custom-node installation. fetch_models.py will further
+# install the `comfyui-manager` pip package into the right Python on first
+# run (it's required for `comfy node install` to work).
 log "installing comfy-cli"
 pip3 install -q --upgrade comfy-cli --break-system-packages 2>/dev/null \
   || pip3 install -q --upgrade comfy-cli \
-  || log "WARNING: comfy-cli install failed (custom nodes will use cm-cli fallback)"
+  || log "WARNING: comfy-cli install failed (custom-node installation will fail)"
 
 # --- 2. fetch script + config ---------------------------------------------
 mkdir -p "$WORKDIR"

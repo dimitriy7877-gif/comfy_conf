@@ -55,8 +55,6 @@ overwrite: false
 # workflows:
 #   - url: https://raw.githubusercontent.com/dimitriy7877-gif/comfy_conf/main/wan22.json
 #     filename: wan22.json
-#   - url: https://raw.githubusercontent.com/<user>/<repo>/main/my_workflow.json
-#     subdir: wan                # optional nested folder under workflows_path
 
 
 # ===========================================================================
@@ -68,16 +66,15 @@ overwrite: false
 #  Installed AFTER workflows, BEFORE models. ComfyUI is restarted once at
 #  the very end (see `restart` below), and only if at least one node
 #  actually installed.
+#
+#  Internals: nodes are installed via `comfy node install <ref>` from
+#  comfy-cli. comfy-cli requires the ComfyUI-Manager PIP PACKAGE
+#  (`comfyui-manager`) to be importable from the same Python that ComfyUI
+#  uses — fetch_models.py auto-installs it on first run. A bare git checkout
+#  of ComfyUI-Manager in custom_nodes/ is NOT enough for comfy-cli >=1.5.
 # ---------------------------------------------------------------------------
 
 # --- How nodes are installed ---
-
-# Which installer to use:
-#   comfy-cli  (default) — the pip-installed `comfy` command; it wraps
-#                          ComfyUI-Manager's cm-cli.py under the hood.
-#   cm-cli               — call ComfyUI-Manager/cm-cli.py directly.
-# If `comfy` is not on PATH, comfy-cli automatically falls back to cm-cli.
-custom_nodes_installer: comfy-cli
 
 # Restart ComfyUI after nodes were installed. Fires only when at least one
 # node actually installed (and not during --dry-run).
@@ -92,27 +89,27 @@ restart: auto
 # Port ComfyUI listens on — used only by the `auto` restart reboot endpoint.
 comfyui_port: 8188
 
-# IMPORTANT: a custom node's pip requirements MUST install into the SAME
-# Python environment ComfyUI runs under, or the node will fail to import.
-# If ComfyUI uses a dedicated venv, point to it here. Leave "" to install
-# into the currently active Python.
+# IMPORTANT: the ComfyUI-Manager pip package and every custom node's
+# requirements.txt must install into the SAME Python that ComfyUI runs
+# under, otherwise comfy-cli won't find Manager and nodes won't import.
+# If ComfyUI uses a dedicated venv, point to it here. Leave "" to use the
+# system Python that runs bootstrap.sh / fetch_models.py (the typical
+# RunPod-slim setup).
 comfyui_venv: ""              # e.g. /workspace/runpod-slim/ComfyUI/venv
-
-# comfy-cli depends on ComfyUI-Manager being present; it is auto-cloned if
-# missing. Uncomment to override the source repo/branch.
-# comfyui_manager_repo: https://github.com/ltdrdata/ComfyUI-Manager.git
 
 # --- What to install ---
 #  Flat list. Each entry is one of:
-#    - comfyui-kjnodes                              # registry id (shorthand)
+#    - comfyui-gguf                                 # Registry ID (shorthand)
 #    - https://github.com/user/Repo                 # git URL     (shorthand)
-#    - { id: comfyui-impact-pack, version: 8.15.3 } # registry id + opt. pin
+#    - { id: comfyui-impact-pack, version: 8.15.3 } # Registry ID + opt. pin
 #    - { url: https://github.com/user/Repo,         # git URL
-#        pip: false }                               #   skip its requirements
+#        pip: false }                               #   skip requirements.txt
 #
-#  Resolution: strings starting with http(s):// or git@ are treated as git
-#  URLs; anything else is a registry id. Version pinning is best-effort
-#  (depends on comfy-cli registry-install support).
+#  Both forms are passed directly to `comfy node install` — comfy-cli/cm-cli
+#  accepts URLs and Registry IDs interchangeably. Version pinning uses
+#  Registry's `<id>@<version>` syntax (best-effort: depends on whether
+#  Registry has that exact version).
+# ---------------------------------------------------------------------------
 custom_nodes:
 
   # Required by this config's payload:
