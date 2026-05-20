@@ -113,11 +113,11 @@ comfyui_venv: ""              # e.g. /workspace/runpod-slim/ComfyUI/venv
 custom_nodes:
 
   # Required by this config's payload:
-  - https://github.com/city96/ComfyUI-GGUF                  # loads .gguf diffusion models
-  - https://github.com/Kosinkadink/ComfyUI-VideoHelperSuite # video I/O for Wan2.2 T2V
+  - ComfyUI-GGUF
+  - RES4LYF
 
   # Optional helpers:
-  - https://github.com/kijai/ComfyUI-KJNodes               # misc utility nodes
+  - ComfyUI-Crystools
 
   # Examples (uncomment to use):
   # - id: comfyui-impact-pack
