@@ -4,7 +4,7 @@
 # ---------------------------------------------------------------------------
 #  Installs dependencies, downloads the downloader script + config from
 #  BASE_URL, then runs it. Any extra args are passed through to fetch_models.py
-#  (e.g. --dry-run, --force, --comfyui /path).
+#  (e.g. --dry-run, --force, --comfyui /path, --skip-nodes, --no-restart).
 #
 #  BASE_URL resolution order:
 #    1. explicit  BASE_URL=...           (env, highest priority)
@@ -86,7 +86,8 @@ need_apt=()
 command -v python3 >/dev/null 2>&1 || need_apt+=(python3)
 command -v pip3   >/dev/null 2>&1 || need_apt+=(python3-pip)
 command -v curl   >/dev/null 2>&1 || need_apt+=(curl)
-command -v aria2c >/dev/null 2>&1 || need_apt+=(aria2)   # fast parallel DL
+command -v git    >/dev/null 2>&1 || need_apt+=(git)      # node clones / Manager
+command -v aria2c >/dev/null 2>&1 || need_apt+=(aria2)    # fast parallel DL
 
 if [ "${#need_apt[@]}" -gt 0 ]; then
   log "installing via apt: ${need_apt[*]}"
@@ -98,6 +99,13 @@ fi
 log "installing pyyaml"
 pip3 install -q --upgrade pyyaml --break-system-packages 2>/dev/null \
   || pip3 install -q --upgrade pyyaml
+
+# comfy-cli is used for custom-node installation (it wraps ComfyUI-Manager's
+# cm-cli.py). Harmless if no custom_nodes are declared in models.yaml.
+log "installing comfy-cli"
+pip3 install -q --upgrade comfy-cli --break-system-packages 2>/dev/null \
+  || pip3 install -q --upgrade comfy-cli \
+  || log "WARNING: comfy-cli install failed (custom nodes will use cm-cli fallback)"
 
 # --- 2. fetch script + config ---------------------------------------------
 mkdir -p "$WORKDIR"

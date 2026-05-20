@@ -17,7 +17,9 @@ Features:
   - Dry-run mode
   - Workflow auto-discovery: pulls every *.json from the repo's workflows/
     directory via the GitHub Contents API (top level only)
-  - Workflows are downloaded BEFORE models
+  - Custom node installation via comfy-cli (fallback: cm-cli.py),
+    list declared in models.yaml, ComfyUI restarted afterwards
+  - Order: workflows -> custom nodes -> models -> single restart
 
 Usage:
   python3 fetch_models.py -c models.yaml
@@ -25,6 +27,8 @@ Usage:
   python3 fetch_models.py -c models.yaml --force
   python3 fetch_models.py -c models.yaml --comfyui /path/to/ComfyUI
   python3 fetch_models.py -c models.yaml --workflows-listing-url <api_url>
+  python3 fetch_models.py -c models.yaml --skip-nodes
+  python3 fetch_models.py -c models.yaml --no-restart
 """
 
 import argparse
@@ -227,6 +231,178 @@ def merge_workflows(discovered, explicit):
     return merged
 
 
+# ===========================================================================
+#  Custom nodes
+# ===========================================================================
+
+def normalize_node(item):
+    """
+    Accept a node spec in any of these shapes and return a normalized dict:
+      "comfyui-kjnodes"                 -> registry id
+      "https://github.com/u/Repo"       -> git url
+      {url: <git>, pip: <bool>}         -> git url
+      {id: <reg-id>, version: <v>, pip} -> registry id (optional pin)
+    Returned: {"kind": "git"|"registry", "ref": str, "pip": bool}
+    """
+    if isinstance(item, str):
+        if item.startswith(("http://", "https://", "git@")):
+            item = {"url": item}
+        else:
+            item = {"id": item}
+
+    if item.get("url"):
+        return {"kind": "git", "ref": item["url"],
+                "pip": item.get("pip", True)}
+
+    ref = str(item["id"])
+    if item.get("version"):
+        ref = f'{ref}=={item["version"]}'
+    return {"kind": "registry", "ref": ref, "pip": item.get("pip", True)}
+
+
+def node_env(cfg):
+    """
+    Custom-node pip requirements MUST land in the same Python that ComfyUI
+    runs under, otherwise the nodes won't import. If comfyui_venv is set we
+    point the installer at it via VIRTUAL_ENV / PATH.
+    """
+    env = os.environ.copy()
+    venv = cfg.get("comfyui_venv")
+    if venv:
+        venv = str(Path(venv).expanduser())
+        env["VIRTUAL_ENV"] = venv
+        env["PATH"] = f"{venv}/bin:" + env.get("PATH", "")
+        log(f"node deps -> venv: {venv}", "*")
+    return env
+
+
+def ensure_manager(comfyui: Path, cfg, dry_run):
+    """
+    comfy-cli delegates to ComfyUI-Manager's cm-cli.py and requires it to be
+    present. On a slim pod it may be missing -> clone it. Non-fatal.
+    """
+    mgr = comfyui / "custom_nodes" / "ComfyUI-Manager"
+    if mgr.exists():
+        return True
+    repo = cfg.get("comfyui_manager_repo",
+                    "https://github.com/ltdrdata/ComfyUI-Manager.git")
+    if dry_run:
+        log(f"DRY-RUN would clone ComfyUI-Manager from {repo}", ">")
+        return True
+    log(f"ComfyUI-Manager not found, cloning: {repo}", ">")
+    rc = subprocess.run(
+        ["git", "clone", "--depth", "1", repo, str(mgr)]
+    ).returncode
+    if rc != 0:
+        log(f"FAILED to clone ComfyUI-Manager (rc={rc})", "!")
+        return False
+    return True
+
+
+def install_custom_nodes(nodes, comfyui: Path, cfg, dry_run, force):
+    """
+    Install custom nodes. Returns (ok, fail, changed) where `changed` is the
+    number of nodes for which an install command actually ran (used to decide
+    whether a ComfyUI restart is warranted).
+    """
+    ok = fail = changed = 0
+    installer = cfg.get("custom_nodes_installer", "comfy-cli")
+    env = node_env(cfg)
+
+    if installer == "comfy-cli":
+        if not shutil.which("comfy"):
+            log("comfy-cli ('comfy') not on PATH -> falling back to cm-cli", "!")
+            installer = "cm-cli"
+        else:
+            ensure_manager(comfyui, cfg, dry_run)
+
+    cm_cli = comfyui / "custom_nodes" / "ComfyUI-Manager" / "cm-cli.py"
+    if installer == "cm-cli" and not dry_run and not cm_cli.exists():
+        # cm-cli fallback still needs ComfyUI-Manager present
+        if not ensure_manager(comfyui, cfg, dry_run) or not cm_cli.exists():
+            log("cm-cli.py unavailable - cannot install custom nodes", "!")
+            return ok, len(nodes or []), 0
+
+    for spec in (normalize_node(x) for x in nodes or []):
+        ref, kind = spec["ref"], spec["kind"]
+
+        if dry_run:
+            log(f"DRY-RUN would install [{installer}/{kind}] {ref}", ">")
+            ok += 1
+            continue
+
+        if installer == "comfy-cli":
+            cmd = ["comfy", "--skip-prompt", "--workspace", str(comfyui),
+                   "node"]
+            cmd += (["registry-install", ref] if kind == "registry"
+                    else ["install", ref])
+        else:  # cm-cli
+            env["COMFYUI_PATH"] = str(comfyui)
+            cmd = [sys.executable, str(cm_cli), "install", ref]
+
+        log(f"installing custom node [{kind}]: {ref}", ">")
+        rc = subprocess.run(cmd, env=env).returncode
+        if rc == 0:
+            log(f"DONE node: {ref}", "+")
+            ok += 1
+            changed += 1
+        else:
+            log(f"FAILED ({rc}) node: {ref}", "!")
+            fail += 1
+
+    return ok, fail, changed
+
+
+def restart_comfyui(cfg, dry_run, changed, no_restart):
+    """
+    Restart strategy (config key `restart`):
+      none / ""          -> never
+      auto (default)     -> ComfyUI-Manager reboot endpoint, then fall back
+                            to killing main.py (pod supervisor relaunches)
+      "<command>"        -> run the given shell command
+    Only fires if at least one node actually installed and not dry-run.
+    """
+    strat = cfg.get("restart", "auto")
+
+    if no_restart:
+        log("restart: disabled via --no-restart", "=")
+        return
+    if strat in (None, "", "none"):
+        log("restart: disabled (restart=none)", "=")
+        return
+    if changed == 0:
+        log("restart: skipped (no custom nodes changed)", "=")
+        return
+    if dry_run:
+        log("DRY-RUN would restart ComfyUI", ">")
+        return
+
+    if strat == "auto":
+        port = cfg.get("comfyui_port", 8188)
+        for path in ("/api/manager/reboot", "/manager/reboot"):
+            for method in ("POST", "GET"):
+                try:
+                    req = urllib.request.Request(
+                        f"http://127.0.0.1:{port}{path}", method=method)
+                    urllib.request.urlopen(req, timeout=10)
+                    log(f"restart: ComfyUI-Manager reboot triggered "
+                        f"({method} {path})", "+")
+                    return
+                except Exception:
+                    continue
+        # Fallback: kill the server; RunPod templates typically relaunch it.
+        rc = subprocess.run(["pkill", "-f", "ComfyUI/main.py"]).returncode
+        if rc == 0:
+            log("restart: killed main.py (pod supervisor should relaunch)",
+                "+")
+        else:
+            log("restart: could not reach Manager API and no main.py "
+                "process matched - restart ComfyUI manually", "!")
+    else:
+        log(f"restart: running custom command: {strat}", ">")
+        subprocess.run(strat, shell=True)
+
+
 def main():
     ap = argparse.ArgumentParser(description="ComfyUI universal model downloader")
     ap.add_argument("-c", "--config", required=True, help="YAML config path")
@@ -239,6 +415,10 @@ def main():
     ap.add_argument("--github-token",
                     help="GitHub token for the Contents API (private repos / "
                          "higher rate limit)")
+    ap.add_argument("--skip-nodes", action="store_true",
+                    help="Do not install custom nodes")
+    ap.add_argument("--no-restart", action="store_true",
+                    help="Do not restart ComfyUI after installing nodes")
     args = ap.parse_args()
 
     cfg = yaml.safe_load(Path(args.config).read_text())
@@ -267,17 +447,19 @@ def main():
 
     models = cfg.get("models") or {}
     explicit_workflows = cfg.get("workflows") or []
+    custom_nodes = [] if args.skip_nodes else (cfg.get("custom_nodes") or [])
 
     discovered = discover_workflows(args.workflows_listing_url, github_token)
     workflows = merge_workflows(discovered, explicit_workflows)
 
-    if not models and not workflows:
-        sys.exit("Nothing to do: config has neither 'models' nor 'workflows', "
-                 "and no workflows were auto-discovered.")
+    if not models and not workflows and not custom_nodes:
+        sys.exit("Nothing to do: config has neither 'models', 'workflows' nor "
+                 "'custom_nodes', and no workflows were auto-discovered.")
 
     ok = fail = 0
+    nodes_changed = 0
 
-    # --- workflows FIRST, before models ------------------------------------
+    # --- workflows FIRST ---------------------------------------------------
     if workflows:
         log(f"=== workflows ({len(workflows)})  ->  {wf_dir}", "#")
         o, f = fetch_list(workflows, wf_dir, headers, force, args.dry_run)
@@ -286,6 +468,17 @@ def main():
     else:
         log("no workflows to download", "=")
 
+    # --- custom nodes (after workflows, before models) ---------------------
+    if custom_nodes:
+        log(f"=== custom nodes ({len(custom_nodes)})", "#")
+        o, f, ch = install_custom_nodes(
+            custom_nodes, comfyui, cfg, args.dry_run, force)
+        ok += o
+        fail += f
+        nodes_changed = ch
+    else:
+        log("no custom nodes to install", "=")
+
     # --- models ------------------------------------------------------------
     for mtype, items in models.items():
         type_dir = models_root / mtype
@@ -293,6 +486,9 @@ def main():
         o, f = fetch_list(items, type_dir, headers, force, args.dry_run)
         ok += o
         fail += f
+
+    # --- single restart at the very end ------------------------------------
+    restart_comfyui(cfg, args.dry_run, nodes_changed, args.no_restart)
 
     print("-" * 60)
     log(f"Finished. ok={ok} fail={fail}", "+" if fail == 0 else "!")

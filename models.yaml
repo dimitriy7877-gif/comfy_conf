@@ -1,65 +1,170 @@
 # ===========================================================================
-#  ComfyUI model download config
+#  ComfyUI downloader — configuration
 # ===========================================================================
-# Where ComfyUI lives. Files go into <comfyui_path>/models/<type>/...
+#  Read by fetch_models.py. Defines WHERE ComfyUI lives and WHAT to fetch:
+#  custom nodes, workflows, and models.
+#
+#  Run order is fixed in the script:
+#      workflows  ->  custom nodes  ->  models  ->  one restart at the end
+#
+#  Item syntax is shared across `workflows:` and every `models:` type:
+#      - https://host/file.ext                 # shorthand: just the URL
+#      - url: https://host/file.ext            # full form
+#        filename: renamed.safetensors         #   optional: save-as name
+#        subdir: SubFolder                     #   optional: nested subfolder
+# ===========================================================================
+
+
+# ===========================================================================
+#  1. CORE PATHS & GLOBAL FLAGS
+# ===========================================================================
+
+# Absolute path to the ComfyUI install on the pod.
+# Models land in <comfyui_path>/models/<type>/...
+# Override at runtime with the CLI flag --comfyui.
 comfyui_path: /workspace/runpod-slim/ComfyUI
 
-# Optional. Needed only for gated/private HuggingFace repos.
-# Can also be supplied via env var HF_TOKEN (env wins if config is empty).
+# HuggingFace token. Only needed for gated/private HF repos.
+# Leave "" to use the HF_TOKEN env var instead (env wins when this is empty).
 hf_token: ""
 
-# Re-download even if the file already exists. Same as CLI --force.
+# Re-download files even if they already exist locally.
+# Equivalent to the CLI flag --force.
 overwrite: false
 
-# Where to put workflow JSONs. Default (if omitted):
-#   <comfyui_path>/user/default/workflows
+# Destination for workflow JSON files.
+# Default when omitted: <comfyui_path>/user/default/workflows
 # workflows_path: /workspace/runpod-slim/ComfyUI/user/default/workflows
 
+
+# ===========================================================================
+#  2. WORKFLOWS
+# ===========================================================================
+#  Flat list, shared item syntax (see header). Files are saved into
+#  workflows_path. Downloaded BEFORE custom nodes and models. Links must
+#  point to RAW JSON:
+#    GitHub:      https://raw.githubusercontent.com/<user>/<repo>/<branch>/<path>.json
+#    HuggingFace: https://huggingface.co/<repo>/resolve/main/<path>.json
+#    Gist:        https://gist.githubusercontent.com/<user>/<id>/raw/<file>.json
+#
+#  Auto-discovery: when the source is a raw.githubusercontent.com URL,
+#  bootstrap.sh also pulls every top-level *.json from the repo's
+#  `workflows/` folder automatically. Explicit entries below win on a
+#  filename collision (they may carry custom filename/subdir).
 # ---------------------------------------------------------------------------
-#  workflows: flat list, same item syntax as models (url string OR
-#  url/filename/subdir). Downloaded into workflows_path. Use raw links:
-#    - GitHub:        https://raw.githubusercontent.com/<user>/<repo>/<branch>/<path>.json
-#    - HuggingFace:   https://huggingface.co/<repo>/resolve/main/<path>.json
-#    - Gist:          https://gist.githubusercontent.com/<user>/<id>/raw/<file>.json
-# ---------------------------------------------------------------------------
-#workflows:
-#  - url: https://raw.githubusercontent.com/dimitriy7877-gif/comfy_conf/main/wan22.json
-#    filename: wan22.json
-  # - url: https://raw.githubusercontent.com/<user>/<repo>/main/my_workflow.json
-  #   subdir: wan        # optional nested folder under workflows/
+# workflows:
+#   - url: https://raw.githubusercontent.com/dimitriy7877-gif/comfy_conf/main/wan22.json
+#     filename: wan22.json
+#   - url: https://raw.githubusercontent.com/<user>/<repo>/main/my_workflow.json
+#     subdir: wan                # optional nested folder under workflows_path
 
 
+# ===========================================================================
+#  3. CUSTOM NODES
+# ===========================================================================
+#  Everything about custom nodes lives here: first HOW they're installed,
+#  then the list of WHAT to install.
+#
+#  Installed AFTER workflows, BEFORE models. ComfyUI is restarted once at
+#  the very end (see `restart` below), and only if at least one node
+#  actually installed.
 # ---------------------------------------------------------------------------
-#  models:
-#    <type>:                # == folder name under models/  (any name allowed)
-#      - <url>                            # shorthand: just a URL string
-#      - url: <url>                       # full form
-#        filename: rename.safetensors     # optional: save under another name
-#        subdir: SomeFolder               # optional: nested subfolder
+
+# --- How nodes are installed ---
+
+# Which installer to use:
+#   comfy-cli  (default) — the pip-installed `comfy` command; it wraps
+#                          ComfyUI-Manager's cm-cli.py under the hood.
+#   cm-cli               — call ComfyUI-Manager/cm-cli.py directly.
+# If `comfy` is not on PATH, comfy-cli automatically falls back to cm-cli.
+custom_nodes_installer: comfy-cli
+
+# Restart ComfyUI after nodes were installed. Fires only when at least one
+# node actually installed (and not during --dry-run).
+#   auto       (default) — hit the ComfyUI-Manager reboot endpoint, then
+#                           fall back to killing main.py so the RunPod
+#                           supervisor relaunches it.
+#   none                 — never restart.
+#   "<command>"          — run this shell command instead,
+#                           e.g. "supervisorctl restart comfyui".
+restart: auto
+
+# Port ComfyUI listens on — used only by the `auto` restart reboot endpoint.
+comfyui_port: 8188
+
+# IMPORTANT: a custom node's pip requirements MUST install into the SAME
+# Python environment ComfyUI runs under, or the node will fail to import.
+# If ComfyUI uses a dedicated venv, point to it here. Leave "" to install
+# into the currently active Python.
+comfyui_venv: ""              # e.g. /workspace/runpod-slim/ComfyUI/venv
+
+# comfy-cli depends on ComfyUI-Manager being present; it is auto-cloned if
+# missing. Uncomment to override the source repo/branch.
+# comfyui_manager_repo: https://github.com/ltdrdata/ComfyUI-Manager.git
+
+# --- What to install ---
+#  Flat list. Each entry is one of:
+#    - comfyui-kjnodes                              # registry id (shorthand)
+#    - https://github.com/user/Repo                 # git URL     (shorthand)
+#    - { id: comfyui-impact-pack, version: 8.15.3 } # registry id + opt. pin
+#    - { url: https://github.com/user/Repo,         # git URL
+#        pip: false }                               #   skip its requirements
+#
+#  Resolution: strings starting with http(s):// or git@ are treated as git
+#  URLs; anything else is a registry id. Version pinning is best-effort
+#  (depends on comfy-cli registry-install support).
+custom_nodes:
+
+  # Required by this config's payload:
+  - https://github.com/city96/ComfyUI-GGUF                  # loads .gguf diffusion models
+  - https://github.com/Kosinkadink/ComfyUI-VideoHelperSuite # video I/O for Wan2.2 T2V
+
+  # Optional helpers:
+  - https://github.com/kijai/ComfyUI-KJNodes               # misc utility nodes
+
+  # Examples (uncomment to use):
+  # - id: comfyui-impact-pack
+  #   version: 8.15.3
+  # - url: https://github.com/some/Node
+  #   pip: false
+
+
+# ===========================================================================
+#  4. MODELS
+# ===========================================================================
+#  Mapping of  <type>: [ items... ]  where <type> is literally the folder
+#  name created under <comfyui_path>/models/. Any type name works — adding
+#  a new section needs NO code changes. Shared item syntax (see header).
+#
+#  Current payload: Wan 2.2 T2V A14B (GGUF) + VAE + text encoder + LoRAs.
 # ---------------------------------------------------------------------------
 models:
 
+  # ---- Diffusion models: Wan 2.2 T2V A14B GGUF (high/low noise experts) ----
   diffusion_models:
-    # Wan 2.2 T2V A14B GGUF — high/low noise experts.
-    # Keeping them in subfolders so names stay tidy; drop "subdir" to flatten.
     - url: https://huggingface.co/QuantStack/Wan2.2-T2V-A14B-GGUF/resolve/main/HighNoise/Wan2.2-T2V-A14B-HighNoise-Q8_0.gguf
     - url: https://huggingface.co/QuantStack/Wan2.2-T2V-A14B-GGUF/resolve/main/LowNoise/Wan2.2-T2V-A14B-LowNoise-Q8_0.gguf
 
+  # ---- VAE ----
   vae:
     - https://huggingface.co/QuantStack/Wan2.2-T2V-A14B-GGUF/resolve/main/VAE/Wan2.1_VAE.safetensors
 
+  # ---- Text encoder (UMT5-XXL, fp8) ----
   text_encoders:
     - https://huggingface.co/Comfy-Org/Wan_2.2_ComfyUI_Repackaged/resolve/main/split_files/text_encoders/umt5_xxl_fp8_e4m3fn_scaled.safetensors
 
+  # ---- LoRAs ----
   loras:
+    # lightx2v 4-step distill (speed-up), high + low noise
     - url: https://huggingface.co/lightx2v/Wan2.2-Distill-Loras/resolve/main/wan2.2_t2v_A14b_high_noise_lora_rank64_lightx2v_4step_1217.safetensors
     - url: https://huggingface.co/lightx2v/Wan2.2-Distill-Loras/resolve/main/wan2.2_t2v_A14b_low_noise_lora_rank64_lightx2v_4step_1217.safetensors
+    # Instara realism LoRA (gated repo — needs hf_token / HF_TOKEN), high + low
     - url: https://huggingface.co/Instara/instareal-wan-2.2/resolve/main/Instareal_high.safetensors
     - url: https://huggingface.co/Instara/instareal-wan-2.2/resolve/main/Instareal_low.safetensors
 
-  # Add more types freely, e.g.:
+  # ---- More types as needed (folder == key name) ----
   # checkpoints:
   #   - url: https://.../model.safetensors
   #     filename: my_checkpoint.safetensors
-  # loras:
-  #   - https://.../some_lora.safetensors
+  # controlnet:
+  #   - https://.../some_controlnet.safetensors
