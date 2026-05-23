@@ -22,7 +22,7 @@
 # Absolute path to the ComfyUI install on the pod.
 # Models land in <comfyui_path>/models/<type>/...
 # Override at runtime with the CLI flag --comfyui.
-comfyui_path: /workspace/runpod-slim/ComfyUI
+comfyui_path: /workspace/ComfyUI
 
 # HuggingFace token. Only needed for gated/private HF repos.
 # Leave "" to use the HF_TOKEN env var instead (env wins when this is empty).
