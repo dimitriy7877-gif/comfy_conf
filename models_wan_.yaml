@@ -145,30 +145,38 @@ models:
 
   # ---- Diffusion models: Wan 2.2 T2V A14B GGUF (high/low noise experts) ----
   diffusion_models:
-    #- url: https://huggingface.co/QuantStack/Wan2.2-T2V-A14B-GGUF/resolve/main/HighNoise/Wan2.2-T2V-A14B-HighNoise-Q8_0.gguf
-    #- url: https://huggingface.co/QuantStack/Wan2.2-T2V-A14B-GGUF/resolve/main/LowNoise/Wan2.2-T2V-A14B-LowNoise-Q8_0.gguf
+    - url: https://huggingface.co/QuantStack/Wan2.2-T2V-A14B-GGUF/resolve/main/HighNoise/Wan2.2-T2V-A14B-HighNoise-Q8_0.gguf
+    - url: https://huggingface.co/QuantStack/Wan2.2-T2V-A14B-GGUF/resolve/main/LowNoise/Wan2.2-T2V-A14B-LowNoise-Q8_0.gguf
     - url: https://huggingface.co/unsloth/FLUX.2-klein-9B-GGUF/resolve/main/flux-2-klein-9b-Q8_0.gguf
 
   # ---- VAE ----
   vae:
-    - https://huggingface.co/Comfy-Org/flux2-dev/resolve/main/split_files/vae/flux2-vae.safetensors
-    - https://huggingface.co/Comfy-Org/Wan_2.2_ComfyUI_Repackaged/blob/main/split_files/vae/wan_2.1_vae.safetensors
+    - https://huggingface.co/QuantStack/Wan2.2-T2V-A14B-GGUF/resolve/main/VAE/Wan2.1_VAE.safetensors
 
   # ---- Text encoder (UMT5-XXL, fp8) ----
   text_encoders:
-    - https://huggingface.co/Qwen/Qwen3-8B-GGUF/resolve/main/Qwen3-8B-Q8_0.gguf
     - https://huggingface.co/Comfy-Org/Wan_2.2_ComfyUI_Repackaged/resolve/main/split_files/text_encoders/umt5_xxl_fp8_e4m3fn_scaled.safetensors
 
   # ---- LoRAs ----
   loras:
-    - https://huggingface.co/Alissonerdx/BFS-Best-Face-Swap/resolve/main/bfs_head_v1_flux-klein_9b_step3500_rank128.safetensors
-    - url: https://huggingface.co/lightx2v/Wan2.2-Lightning/resolve/main/Wan2.2-I2V-A14B-4steps-lora-rank64-Seko-V1/high_noise_model.safetensors
-      filename: i2v_lightx2v_high_noise_model.safetensors
-    - url: https://huggingface.co/lightx2v/Wan2.1-I2V-14B-480P-StepDistill-CfgDistill-Lightx2v/resolve/main/loras/Wan21_I2V_14B_lightx2v_cfg_step_distill_lora_rank64.safetensors
-      filename: wan21-lightx2v-i2v-14b-480p-cfg-step-distill-rank256-bf16.safetensors
-
-  clip_vision:
-    - https://huggingface.co/Comfy-Org/Wan_2.1_ComfyUI_repackaged/resolve/main/split_files/clip_vision/clip_vision_h.safetensors
+    # lightx2v 4-step distill (speed-up), high + low noise
+    - url: https://huggingface.co/lightx2v/Wan2.2-Distill-Loras/resolve/main/wan2.2_t2v_A14b_high_noise_lora_rank64_lightx2v_4step_1217.safetensors
+    - url: https://huggingface.co/lightx2v/Wan2.2-Distill-Loras/resolve/main/wan2.2_t2v_A14b_low_noise_lora_rank64_lightx2v_4step_1217.safetensors
+    # Instara realism LoRA (gated repo — needs hf_token / HF_TOKEN), high + low
+    - url: https://huggingface.co/Instara/instareal-wan-2.2/resolve/main/Instareal_high.safetensors
+    - url: https://huggingface.co/Instara/instareal-wan-2.2/resolve/main/Instareal_low.safetensors
+    # Lenovo UltraReal - https://civitai.red/models/1662740/lenovo-ultrareal?modelVersionId=2066914
+    - url: https://huggingface.co/Akron22/LenovoUltraRealWan/resolve/main/Lenovo.safetensors
+    # My lora
+    - url: https://huggingface.co/buckets/Akron22/qwe323213132213/resolve/my_first_lora_v1.safetensors
+    - url: https://huggingface.co/buckets/Akron22/qwe323213132213/resolve/my_first_lora_v1_000001500.safetensors
+    - url: https://huggingface.co/buckets/Akron22/qwe323213132213/resolve/my_first_lora_v1_000001750.safetensors
+    - url: https://huggingface.co/buckets/Akron22/qwe323213132213/resolve/my_first_lora_v1_000002000.safetensors
+    - url: https://huggingface.co/buckets/Akron22/qwe323213132213/resolve/my_first_lora_v1_000002250.safetensors
+    - url: https://huggingface.co/buckets/Akron22/qwe323213132213/resolve/my_first_lora_v1_000002500.safetensors
+    - url: https://huggingface.co/buckets/Akron22/qwe323213132213/resolve/my_first_lora_v1_000002750.safetensors
+    - url: https://huggingface.co/buckets/Akron22/qwe323213132213/resolve/my_first_lora_v1_000003000.safetensors
+    - url: https://huggingface.co/buckets/Akron22/qwe323213132213/resolve/my_first_lora_v1_000003250.safetensors
 
   # ---- More types as needed (folder == key name) ----
   # checkpoints:
