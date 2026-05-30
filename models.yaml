@@ -121,6 +121,12 @@ custom_nodes:
   - ComfyUI-segment-anything-2
   - ComfyUI_essentials
   - ComfyUI-WanAnimatePreprocess
+  - ComfyUI-Custom-Scripts
+  - ComfyUI-KJNodes
+  - ComfyUI-Easy-Use
+  - ComfyUI-VideoHelperSuite
+  - was-node-suite-comfyui
+  - rgthree-comfy
 
   # Optional helpers:
   - ComfyUI-Crystools
