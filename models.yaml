@@ -124,7 +124,9 @@ custom_nodes:
 
   # Optional helpers:
   - ComfyUI-Crystools
-
+  
+  # my api node
+  - https://github.com/dimitriy7877-gif/Comfy-UI-OpenRouter
   # Examples (uncomment to use):
   # - id: comfyui-impact-pack
   #   version: 8.15.3
