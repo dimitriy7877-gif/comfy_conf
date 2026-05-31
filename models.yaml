@@ -112,7 +112,6 @@ comfyui_venv: ""              # e.g. /workspace/runpod-slim/ComfyUI/venv
 # ---------------------------------------------------------------------------
 custom_nodes:
 
-  # Required by this config's payload:
   - ComfyUI-GGUF
   - RES4LYF
   - efficiency-nodes-comfyui
@@ -133,6 +132,7 @@ custom_nodes:
   
   # my api node
   - https://github.com/dimitriy7877-gif/Comfy-UI-OpenRouter
+  
   # Examples (uncomment to use):
   # - id: comfyui-impact-pack
   #   version: 8.15.3
@@ -151,34 +151,34 @@ custom_nodes:
 # ---------------------------------------------------------------------------
 models:
 
-  # ---- Diffusion models: Wan 2.2 T2V A14B GGUF (high/low noise experts) ----
   diffusion_models:
-    #- url: https://huggingface.co/QuantStack/Wan2.2-T2V-A14B-GGUF/resolve/main/HighNoise/Wan2.2-T2V-A14B-HighNoise-Q8_0.gguf
-    #- url: https://huggingface.co/QuantStack/Wan2.2-T2V-A14B-GGUF/resolve/main/LowNoise/Wan2.2-T2V-A14B-LowNoise-Q8_0.gguf
     - url: https://huggingface.co/unsloth/FLUX.2-klein-9B-GGUF/resolve/main/flux-2-klein-9b-Q8_0.gguf
     - url: https://huggingface.co/Kijai/WanVideo_comfy_fp8_scaled/resolve/main/Wan22Animate/Wan2_2-Animate-14B_fp8_scaled_e4m3fn_KJ_v2.safetensors
 
-  # ---- VAE ----
   vae:
     - https://huggingface.co/Comfy-Org/flux2-dev/resolve/main/split_files/vae/flux2-vae.safetensors
     - https://huggingface.co/Comfy-Org/Wan_2.2_ComfyUI_Repackaged/blob/main/split_files/vae/wan_2.1_vae.safetensors
 
-  # ---- Text encoder (UMT5-XXL, fp8) ----
   text_encoders:
     - https://huggingface.co/Qwen/Qwen3-8B-GGUF/resolve/main/Qwen3-8B-Q8_0.gguf
     - https://huggingface.co/Comfy-Org/Wan_2.2_ComfyUI_Repackaged/resolve/main/split_files/text_encoders/umt5_xxl_fp8_e4m3fn_scaled.safetensors
 
-  # ---- LoRAs ----
   loras:
     - https://huggingface.co/Alissonerdx/BFS-Best-Face-Swap/resolve/main/bfs_head_v1_flux-klein_9b_step3500_rank128.safetensors
     - url: https://huggingface.co/lightx2v/Wan2.2-Lightning/resolve/main/Wan2.2-I2V-A14B-4steps-lora-rank64-Seko-V1/high_noise_model.safetensors
       filename: i2v_lightx2v_high_noise_model.safetensors
     - url: https://huggingface.co/lightx2v/Wan2.1-I2V-14B-480P-StepDistill-CfgDistill-Lightx2v/resolve/main/loras/Wan21_I2V_14B_lightx2v_cfg_step_distill_lora_rank64.safetensors
       filename: wan21-lightx2v-i2v-14b-480p-cfg-step-distill-rank256-bf16.safetensors
+    - https://huggingface.co/Kijai/WanVideo_comfy/resolve/main/Pusa/Wan21_PusaV1_LoRA_14B_rank512_bf16.safetensors
+    - https://huggingface.co/alibaba-pai/Wan2.2-Fun-Reward-LoRAs/resolve/main/Wan2.2-Fun-A14B-InP-low-noise-HPS2.1.safetensors
 
   clip_vision:
     - https://huggingface.co/Comfy-Org/Wan_2.1_ComfyUI_repackaged/resolve/main/split_files/clip_vision/clip_vision_h.safetensors
 
+  detection:
+    - https://huggingface.co/JunkyByte/easy_ViTPose/resolve/main/onnx/wholebody/vitpose-l-wholebody.onnx
+    - https://huggingface.co/Wan-AI/Wan2.2-Animate-14B/resolve/main/process_checkpoint/det/yolov10m.onnx
+  
   # ---- More types as needed (folder == key name) ----
   # checkpoints:
   #   - url: https://.../model.safetensors
